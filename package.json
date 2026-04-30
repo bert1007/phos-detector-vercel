@@ -1,0 +1,6 @@
+{
+  "name": "phos-detector",
+  "version": "1.0.0",
+  "description": "AI 血磷飲食辨識工具",
+  "type": "module"
+}
