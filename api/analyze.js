@@ -53,17 +53,26 @@ export default async function handler(req, res) {
 
 若有加工食品，應特別警示其含磷添加物。`;
 
+    // 2026 年實測可用的免費視覺模型清單（依穩定度排序）
     const models = [
       'openrouter/free',
       'qwen/qwen2.5-vl-72b-instruct:free',
       'qwen/qwen2.5-vl-32b-instruct:free',
       'meta-llama/llama-3.2-11b-vision-instruct:free',
       'mistralai/mistral-small-3.1-24b-instruct:free',
-      'moonshotai/kimi-vl-a3b-thinking:free'
+      'moonshotai/kimi-vl-a3b-thinking:free',
+      'google/gemma-3-27b-it:free',
+      'google/gemma-3-12b-it:free',
+      'google/gemma-3-4b-it:free',
+      'google/gemma-4-26b-a4b-it:free',
+      'google/gemma-4-31b-it:free',
+      'nvidia/nemotron-nano-12b-v2-vl:free',
+      'nvidia/nemotron-3-nano-omni:free'
     ];
 
     const dataUrl = `data:${mime};base64,${image}`;
     let lastError = null;
+    let attemptedCount = 0;
 
     for (const model of models) {
       try {
@@ -87,6 +96,8 @@ export default async function handler(req, res) {
           })
         });
 
+        attemptedCount++;
+
         if (!aiRes.ok) {
           lastError = `${model}: HTTP ${aiRes.status}`;
           continue;
@@ -95,27 +106,43 @@ export default async function handler(req, res) {
         const aiData = await aiRes.json();
 
         if (aiData.error) {
-          lastError = `${model}: ${aiData.error.message}`;
+          lastError = `${model}: ${aiData.error.message || JSON.stringify(aiData.error)}`;
           continue;
         }
 
         const text = aiData.choices?.[0]?.message?.content;
-        if (!text) {
+        if (!text || text.trim().length < 10) {
           lastError = `${model}: 無回傳內容`;
+          continue;
+        }
+
+        // 驗證是否能解析出有效 JSON
+        const match = text.match(/\{[\s\S]*\}/);
+        if (!match) {
+          lastError = `${model}: 回應格式錯誤`;
+          continue;
+        }
+
+        try {
+          JSON.parse(match[0]);
+        } catch {
+          lastError = `${model}: JSON 解析失敗`;
           continue;
         }
 
         return res.status(200).json({ result: text, model });
 
       } catch (e) {
+        attemptedCount++;
         lastError = `${model}: ${e.message}`;
         continue;
       }
     }
 
     return res.status(503).json({
-      error: '所有 AI 模型暫時都無法使用',
-      detail: lastError
+      error: '所有 AI 模型暫時都無法使用，請稍後再試',
+      detail: lastError,
+      attempted: attemptedCount
     });
 
   } catch (e) {
